@@ -31,9 +31,9 @@ RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pyt
     && pip install --no-cache-dir -r requirements.txt
 
 # Wav2Arkit lip-sync module (myned-ai/avatar-chat-server, MIT) at a pinned ref
-# — linked, not copied — plus all models baked in so the Space boots warm:
-# wav2arkit (lip-sync), Parakeet (STT) and its Greek fine-tune (ONNX, in a
-# plain folder — see PARAKEET_DIR in run_pipeline.py), Kokoro (TTS).
+# — linked, not copied — plus the models every build needs, baked in so the
+# Space boots warm: wav2arkit (lip-sync) and Parakeet (STT). Only Parakeet's
+# .nemo is loaded; its repo also carries safetensors and GGUF copies (3.1 GB).
 ARG WAV2ARKIT_REF=6229737de9cb4766dda4854b447fe4fb97835472
 ADD https://github.com/myned-ai/avatar-chat-server/archive/${WAV2ARKIT_REF}.tar.gz /tmp/acs.tar.gz
 RUN tar -xzf /tmp/acs.tar.gz -C /tmp \
@@ -41,10 +41,21 @@ RUN tar -xzf /tmp/acs.tar.gz -C /tmp \
     && rm -rf /tmp/acs.tar.gz /tmp/avatar-chat-server-* \
     && python -c "from huggingface_hub import snapshot_download; \
         snapshot_download('myned-ai/wav2arkit_cpu', local_dir='pretrained_models'); \
-        snapshot_download('nvidia/parakeet-tdt-0.6b-v3'); \
-        snapshot_download('myned-ai/parakeet-tdt-0.6b-v3-greek', local_dir='parakeet_models/greek', \
-            allow_patterns=['config.json', 'vocab.txt', 'encoder-model.onnx', 'encoder-model.onnx.data', 'decoder_joint-model.onnx']); \
-        snapshot_download('hexgrad/Kokoro-82M')"
+        snapshot_download('nvidia/parakeet-tdt-0.6b-v3', allow_patterns=['*.nemo'])"
+
+# Languages beside English: Pocket TTS models and their Parakeet STT
+# fine-tunes (pocket_voices.py). English-only build:
+#   docker build --build-arg POCKET_MODELS= --build-arg PARAKEET_MODELS= .
+# Listed STT fine-tunes are baked into plain folders (PARAKEET_DIR in
+# run_pipeline.py); Pocket models download at startup.
+ARG POCKET_MODELS="greek=hf://myned-ai/pocket-tts-greek/greek.yaml"
+ARG PARAKEET_MODELS="greek=myned-ai/parakeet-tdt-0.6b-v3-greek"
+ENV POCKET_MODELS=$POCKET_MODELS PARAKEET_MODELS=$PARAKEET_MODELS
+RUN python -c "import os; from huggingface_hub import snapshot_download; \
+    files = ['config.json', 'vocab.txt', 'encoder-model.onnx', 'encoder-model.onnx.data', 'decoder_joint-model.onnx']; \
+    entries = [e.strip().partition('=') for e in os.environ['PARAKEET_MODELS'].split(',')]; \
+    [snapshot_download(repo.strip(), local_dir='parakeet_models/' + name.strip().lower(), allow_patterns=files) \
+     for name, _, repo in entries if repo.strip()]"
 
 COPY . .
 RUN chmod +x start.sh
