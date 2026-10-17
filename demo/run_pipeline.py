@@ -25,6 +25,7 @@ import threading
 from time import perf_counter
 
 import numpy as np
+import soxr
 from speech_to_speech import s2s_pipeline
 from speech_to_speech.LLM import chat_completions_language_model
 from speech_to_speech.pipeline.messages import EndOfResponse
@@ -213,6 +214,10 @@ class SwappingSTTHandler(parakeet_tdt_handler.ParakeetTDTSTTHandler):
         return text, code or self.last_language
 
 
+def _to_int16(audio):
+    return (np.clip(audio, -1.0, 32767 / 32768) * 32768).astype(np.int16)
+
+
 class CatalogPocketTTSHandler(pocket_tts_handler.PocketTTSHandler):
     def setup(self, should_listen, voice: str = "alba", **kwargs) -> None:
         # The stock setup loads Kyutai's English model, so it needs an
@@ -245,6 +250,7 @@ class CatalogPocketTTSHandler(pocket_tts_handler.PocketTTSHandler):
         self.model, self.voice_state = self._default
         self._default_id = self._current = voice
         self._unknown = set()
+        self._out_rate = self.sample_rate
         logger.info("Pocket TTS serving %d voices, default %r", len(self._voices), voice)
 
     def _load_model(self, TTSModel, name, config):
@@ -257,9 +263,32 @@ class CatalogPocketTTSHandler(pocket_tts_handler.PocketTTSHandler):
         return model if self.device == "cpu" else model.to(self.device)
 
     def process(self, tts_input):
-        if not isinstance(tts_input, EndOfResponse):
-            self._select_voice(tts_input)
-        yield from super().process(tts_input)
+        if isinstance(tts_input, EndOfResponse):
+            yield from super().process(tts_input)
+            return
+        self._select_voice(tts_input)
+        # The stock handler resamples each 32 ms block on its own, which
+        # clicks at every block join (measured: noise 41 dB below the voice,
+        # all of it at the joins). Take its audio at the model's rate and
+        # resample the sentence as one continuous stream instead.
+        self.sample_rate = self.model.sample_rate
+        generation = self.cancel_scope.generation if self.cancel_scope else None
+        stream = soxr.ResampleStream(self.model.sample_rate, self._out_rate, 1, dtype="float32")
+        pending = np.zeros(0, np.float32)
+        for item in super().process(tts_input):
+            if not isinstance(item, np.ndarray):
+                yield item
+                continue
+            pending = np.concatenate([pending, stream.resample_chunk(item.astype(np.float32) / 32768)])
+            while len(pending) >= self.blocksize:
+                yield _to_int16(pending[: self.blocksize])
+                pending = pending[self.blocksize :]
+        if self.cancel_scope is not None and self.cancel_scope.is_stale(generation):
+            return
+        pending = np.concatenate([pending, stream.resample_chunk(np.zeros(0, np.float32), last=True)])
+        for start in range(0, len(pending), self.blocksize):
+            block = pending[start : start + self.blocksize]
+            yield _to_int16(np.pad(block, (0, self.blocksize - len(block))))
 
     def _select_voice(self, tts_input) -> None:
         """Response-level voice first, then the session's; unknown ids (e.g.
