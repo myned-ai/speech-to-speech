@@ -16,17 +16,13 @@ COPY requirements.txt constraints.txt ./
 # Every pip install below is held to the known-good versions in constraints.txt.
 ENV PIP_CONSTRAINT=/app/constraints.txt
 # CPU-only torch first (the default index pulls multi-GB CUDA builds), then
-# the CPU build of the Qwen3-TTS GGML runtime (unused at runtime — Kokoro is
-# the TTS — but required to satisfy speech-to-speech's dependency set), then
-# the pipeline itself and the demo requirements.
+# the pipeline itself and the demo requirements. The pipeline also pulls in
+# the Qwen3-TTS runtime (qwentts-cpp-python, ~100 MB), which this app never
+# loads; pip picks its x86-64 or ARM wheel from PyPI.
 # Pipeline from source at the commit this branch is based on (the PyPI
 # release lags the repo — it lacks the chat-completions backend).
 ARG S2S_REF=eb4d0387dcc4b8f34220797fd00591850eacc52c
 RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cpu \
-    && pip install --no-cache-dir huggingface_hub \
-    && python -c "from huggingface_hub import hf_hub_download; import subprocess, sys; \
-        p = hf_hub_download('andito/qwentts-cpp-python-wheels', 'whl/cpu/qwentts_cpp_python-0.3.0+cpu-py3-none-manylinux_2_34_x86_64.manylinux_2_35_x86_64.whl', repo_type='dataset'); \
-        sys.exit(subprocess.run(['pip', 'install', '--no-cache-dir', p]).returncode)" \
     && pip install --no-cache-dir "speech-to-speech[kokoro,pocket] @ git+https://github.com/huggingface/speech-to-speech.git@${S2S_REF}" \
     && pip install --no-cache-dir -r requirements.txt
 
@@ -43,13 +39,14 @@ RUN tar -xzf /tmp/acs.tar.gz -C /tmp \
         snapshot_download('myned-ai/wav2arkit_cpu', local_dir='pretrained_models'); \
         snapshot_download('nvidia/parakeet-tdt-0.6b-v3', allow_patterns=['*.nemo'])"
 
-# Languages beside English: Pocket TTS models and their Parakeet STT
-# fine-tunes (pocket_voices.py). English-only build:
-#   docker build --build-arg POCKET_MODELS= --build-arg PARAKEET_MODELS= .
+# Languages beside English (none by default): Pocket TTS models and their
+# Parakeet STT fine-tunes (pocket_voices.py), e.g. Greek:
+#   --build-arg POCKET_MODELS=greek=hf://myned-ai/pocket-tts-greek/greek.yaml
+#   --build-arg PARAKEET_MODELS=greek=myned-ai/parakeet-tdt-0.6b-v3-greek
 # Listed STT fine-tunes are baked into plain folders (PARAKEET_DIR in
 # run_pipeline.py); Pocket models download at startup.
-ARG POCKET_MODELS="greek=hf://myned-ai/pocket-tts-greek/greek.yaml"
-ARG PARAKEET_MODELS="greek=myned-ai/parakeet-tdt-0.6b-v3-greek"
+ARG POCKET_MODELS=""
+ARG PARAKEET_MODELS=""
 ENV POCKET_MODELS=$POCKET_MODELS PARAKEET_MODELS=$PARAKEET_MODELS
 RUN python -c "import os; from huggingface_hub import snapshot_download; \
     files = ['config.json', 'vocab.txt', 'encoder-model.onnx', 'encoder-model.onnx.data', 'decoder_joint-model.onnx']; \

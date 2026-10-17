@@ -105,6 +105,7 @@ python-multipart==0.0.32
 pytz==2026.2
 PyYAML==6.0.3
 qwen-tts==0.1.1
+qwentts-cpp-python==0.3.0
 rdflib==7.6.0
 referencing==0.37.0
 regex==2026.7.10
