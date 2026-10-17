@@ -2768,3 +2768,21 @@ body.cam-on .footer {
 body.cam-on .footer {
   align-items: flex-end;
 }
+/* Each credit line: label, brand mark, then the repo link, scaled to the
+ * footer's 11px text. */
+.footer-credit {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.footer .hf-mark {
+  width: 12px;
+  height: 12px;
+}
+.footer .myned-mark {
+  height: 11px;
+}
+.footer a.footer-mark {
+  display: inline-flex;
+  border-bottom: 0;
+}

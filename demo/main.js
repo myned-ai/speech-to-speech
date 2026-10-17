@@ -205,13 +205,6 @@ const settingsBtn = $("#settings-btn");
 const settingsModal = $("#settings-modal");
 
 /** @type {HTMLButtonElement} */
-const aboutBtn = $("#about-btn");
-/** @type {HTMLDialogElement} */
-const aboutModal = $("#about-modal");
-/** @type {HTMLButtonElement} */
-const aboutClose = $("#about-close");
-
-/** @type {HTMLButtonElement} */
 const toolsBtn = $("#tools-btn");
 /** @type {HTMLDialogElement} */
 const toolsModal = $("#tools-modal");
@@ -576,16 +569,6 @@ mgaHit.addEventListener("pointerup", endGateDrag);
 mgaHit.addEventListener("pointercancel", endGateDrag);
 
 settingsBtn.addEventListener("click", openSettings);
-
-// About panel: native <dialog>, Esc closes for free; also close on the X and
-// on a click in the backdrop (a click whose target is the dialog itself).
-aboutBtn.addEventListener("click", () => aboutModal.showModal());
-// Mobile twin of the (i), living in the right-hand control cluster.
-$("#about-btn-m").addEventListener("click", () => aboutModal.showModal());
-aboutClose.addEventListener("click", () => aboutModal.close());
-aboutModal.addEventListener("click", (e) => {
-  if (e.target === aboutModal) aboutModal.close();
-});
 
 // ── Tools panel ───────────────────────────────────────────────────────────
 
